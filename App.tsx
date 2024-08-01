@@ -1,117 +1,222 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useState} from 'react';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
+  View,
+  TextInput,
+  Button,
   StyleSheet,
   Text,
-  useColorScheme,
-  View,
+  TouchableOpacity,
+  Keyboard,
+  Alert,
+  ScrollView,
 } from 'react-native';
+import {WebView, WebViewNavigation} from 'react-native-webview';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+const App: React.FC = () => {
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [urls, setUrls] = useState<string>('');
+  const [proxyType, setProxyType] = useState<string>(''); // Proxy type (http, https, socks5)
+  const [proxyAddress, setProxyAddress] = useState<string>(''); // Proxy address
+  const [proxyPort, setProxyPort] = useState<string>(''); // Proxy port
+  const [proxyUsername, setProxyUsername] = useState<string>(''); // Proxy username
+  const [proxyPassword, setProxyPassword] = useState<string>(''); // Proxy password
+  const [clicks, setClicks] = useState<number>(5); // Number of clicks
+  const [webviewUrl, setWebviewUrl] = useState<string | null>(null);
+  const [isWebViewVisible, setIsWebViewVisible] = useState<boolean>(false);
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+  const handleSearch = (): void => {
+    Keyboard.dismiss();
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+    // Construct the search URL
+    const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(
+      searchTerm,
+    )}`;
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+    // Check if proxy details are provided
+    let finalUrl = searchUrl;
+    if (proxyType && proxyAddress && proxyPort) {
+      // Construct proxy URL
+      const proxyUrl = `${proxyType}://${proxyUsername}:${proxyPassword}@${proxyAddress}:${proxyPort}`;
+      finalUrl = `${proxyUrl}/proxy?url=${encodeURIComponent(searchUrl)}`;
+    }
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+    setWebviewUrl(finalUrl);
+    setIsWebViewVisible(true);
+
+    // Show an alert with instructions if proxy is provided
+    if (proxyType && proxyAddress && proxyPort) {
+      Alert.alert(
+        'Proxy Configuration',
+        'Please configure your device proxy settings to use the provided proxy server for the WebView to work correctly.',
+        [{text: 'OK'}],
+      );
+    }
+  };
+
+  const handleClear = (): void => {
+    setWebviewUrl(null);
+    setIsWebViewVisible(false);
+  };
+
+  const injectedJavaScript = `
+  (function() {
+    var urls = ${JSON.stringify(
+      urls.split(',').map(url => url.trim().toLowerCase()),
+    )};
+    var clickCount = 0;
+    var maxClicks = ${clicks}; // Use user-defined number of clicks
+
+    function clickAndReturnHome() {
+      if (clickCount >= maxClicks) {
+        console.log('Max clicks reached.');
+        return;
+      }
+
+      var links = document.getElementsByTagName('a');
+      console.log("Found links:", links);
+      for (var i = 0; i < links.length; i++) {
+        var link = links[i];
+        var linkUrl = link.href.toLowerCase(); // Convert to lowercase for case-insensitive comparison
+        console.log("Checking link:", linkUrl);
+
+        for (var j = 0; j < urls.length; j++) {
+          if (linkUrl.includes(urls[j])) {
+            console.log("Clicking on URL:", linkUrl);
+            link.scrollIntoView();
+            try {
+              link.click();
+              clickCount++;
+              console.log('Click count:', clickCount);
+              setTimeout(() => {
+                window.location.href = 'https://www.google.com/search?q=${encodeURIComponent(
+                  searchTerm,
+                )}';
+                setTimeout(clickAndReturnHome, 3000); // Wait before the next click
+              }, 3000); // Wait before going back
+            } catch (error) {
+              console.error("Error clicking link:", error);
+            }
+            return;
+          }
+        }
+      }
+    }
+
+    clickAndReturnHome();
+  })();
+`;
+
+  const onNavigationStateChange = (navState: WebViewNavigation): void => {
+    console.log('Current URL:', navState.url);
   };
 
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
-      />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.scrollView}>
+        <Text style={styles.title}>Search and URL Checker</Text>
+        <TextInput
+          style={styles.input}
+          placeholder="Enter search term"
+          value={searchTerm}
+          onChangeText={setSearchTerm}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Enter URLs (comma-separated)"
+          value={urls}
+          onChangeText={setUrls}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Enter proxy type (http, https, socks5) or leave blank"
+          value={proxyType}
+          onChangeText={setProxyType}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Enter proxy address (e.g., proxyserver.com) or leave blank"
+          value={proxyAddress}
+          onChangeText={setProxyAddress}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Enter proxy port (e.g., 8080) or leave blank"
+          value={proxyPort}
+          onChangeText={setProxyPort}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Enter proxy username or leave blank"
+          value={proxyUsername}
+          onChangeText={setProxyUsername}
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Enter proxy password or leave blank"
+          value={proxyPassword}
+          onChangeText={setProxyPassword}
+          secureTextEntry
+        />
+        <TextInput
+          style={styles.input}
+          placeholder="Enter number of clicks"
+          value={clicks.toString()}
+          onChangeText={text => setClicks(parseInt(text, 10) || 0)}
+          keyboardType="numeric"
+        />
+        <Button title="Submit" onPress={handleSearch} />
       </ScrollView>
-    </SafeAreaView>
+      {isWebViewVisible && (
+        <View style={styles.webViewContainer}>
+          <TouchableOpacity style={styles.cancelButton} onPress={handleClear}>
+            <Text>Back</Text>
+          </TouchableOpacity>
+          <WebView
+            source={{uri: webviewUrl!}}
+            style={{flex: 1}}
+            injectedJavaScript={injectedJavaScript}
+            onNavigationStateChange={onNavigationStateChange}
+          />
+        </View>
+      )}
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    backgroundColor: '#fff',
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
+  scrollView: {
+    padding: 16,
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
+  title: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
   },
-  highlight: {
-    fontWeight: '700',
+  input: {
+    height: 40,
+    borderColor: 'gray',
+    borderWidth: 1,
+    marginBottom: 10,
+    paddingHorizontal: 8,
+  },
+  webViewContainer: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+    zIndex: 1,
+    backgroundColor: 'white',
+  },
+  cancelButton: {
+    position: 'absolute',
+    top: 40,
+    left: 10,
+    zIndex: 2,
   },
 });
 
