@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, { useState, useRef } from 'react';
 import {
   View,
   TextInput,
@@ -10,11 +10,11 @@ import {
   Alert,
   ScrollView,
 } from 'react-native';
-import {WebView, WebViewNavigation} from 'react-native-webview';
+import { WebView, WebViewNavigation } from 'react-native-webview';
 
 const App: React.FC = () => {
-  const [searchTerm, setSearchTerm] = useState<string>('');
-  const [urls, setUrls] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState<string>('coursera');
+  const [urls, setUrls] = useState<string>('coursera.org');
   const [proxyType, setProxyType] = useState<string>(''); // Proxy type (http, https, socks5)
   const [proxyAddress, setProxyAddress] = useState<string>(''); // Proxy address
   const [proxyPort, setProxyPort] = useState<string>(''); // Proxy port
@@ -23,6 +23,8 @@ const App: React.FC = () => {
   const [clicks, setClicks] = useState<number>(5); // Number of clicks
   const [webviewUrl, setWebviewUrl] = useState<string | null>(null);
   const [isWebViewVisible, setIsWebViewVisible] = useState<boolean>(false);
+  
+  const webViewRef = useRef<WebView>(null); // Ref for WebView
 
   const handleSearch = (): void => {
     Keyboard.dismiss();
@@ -48,7 +50,7 @@ const App: React.FC = () => {
       Alert.alert(
         'Proxy Configuration',
         'Please configure your device proxy settings to use the provided proxy server for the WebView to work correctly.',
-        [{text: 'OK'}],
+        [{ text: 'OK' }],
       );
     }
   };
@@ -61,50 +63,76 @@ const App: React.FC = () => {
   const injectedJavaScript = `
   (function() {
     var urls = ${JSON.stringify(
-      urls.split(',').map(url => url.trim().toLowerCase()),
+      urls.split(',').map(url => url.trim().toLowerCase())
     )};
     var clickCount = 0;
-    var maxClicks = ${clicks}; // Use user-defined number of clicks
-
+    var maxClicks = ${clicks};
+    var noMatchingSponsoredLink = true;
+  
     function clickAndReturnHome() {
       if (clickCount >= maxClicks) {
         console.log('Max clicks reached.');
         return;
       }
-
+  
       var links = document.getElementsByTagName('a');
       console.log("Found links:", links);
       for (var i = 0; i < links.length; i++) {
         var link = links[i];
-        var linkUrl = link.href.toLowerCase(); // Convert to lowercase for case-insensitive comparison
-        console.log("Checking link:", linkUrl);
-
-        for (var j = 0; j < urls.length; j++) {
-          if (linkUrl.includes(urls[j])) {
-            console.log("Clicking on URL:", linkUrl);
-            link.scrollIntoView();
-            try {
-              link.click();
-              clickCount++;
-              console.log('Click count:', clickCount);
-              setTimeout(() => {
-                window.location.href = 'https://www.google.com/search?q=${encodeURIComponent(
-                  searchTerm,
-                )}';
-                setTimeout(clickAndReturnHome, 3000); // Wait before the next click
-              }, 3000); // Wait before going back
-            } catch (error) {
-              console.error("Error clicking link:", error);
+        var linkUrl = link.href.toLowerCase();
+  
+        // Check if the link is sponsored by checking specific class names
+        var sponsoredClassNames = ['U3A9Ac', 'qV8iec'];
+        var isSponsored = Array.from(link.getElementsByTagName('span')).some(span =>
+          sponsoredClassNames.some(className => span.classList.contains(className))
+        );
+  
+        if (isSponsored) {
+          console.log("Checking sponsored link:", linkUrl);
+  
+          for (var j = 0; j < urls.length; j++) {
+            if (linkUrl.includes(urls[j])) {
+              console.log("Clicking on sponsored URL:", linkUrl);
+              noMatchingSponsoredLink = false;
+              link.scrollIntoView();
+              try {
+                link.click();
+                clickCount++;
+                console.log('Click count:', clickCount);
+                setTimeout(() => {
+                  window.location.href = 'https://www.google.com/search?q=${encodeURIComponent(
+                    searchTerm
+                  )}';
+                  setTimeout(clickAndReturnHome, 3000);
+                }, 3000);
+              } catch (error) {
+                console.error("Error clicking link:", error);
+              }
+              return;
             }
-            return;
           }
         }
       }
+  
+      if (noMatchingSponsoredLink) {
+        console.log('No matching sponsored link found.');
+        setTimeout(() => {
+          window.close();
+        }, 3000);
+      }
     }
-
+  
     clickAndReturnHome();
   })();
-`;
+  `;
+  
+
+  const onMessage = (event: any) => {
+    const { data } = event.nativeEvent;
+    if (data === 'noMatchingSponsoredLink') {
+      handleClear(); // Trigger the back action
+    }
+  };
 
   const onNavigationStateChange = (navState: WebViewNavigation): void => {
     console.log('Current URL:', navState.url);
@@ -166,16 +194,18 @@ const App: React.FC = () => {
         />
         <Button title="Submit" onPress={handleSearch} />
       </ScrollView>
-      {isWebViewVisible && (
+      {isWebViewVisible && webviewUrl && (
         <View style={styles.webViewContainer}>
           <TouchableOpacity style={styles.cancelButton} onPress={handleClear}>
             <Text>Back</Text>
           </TouchableOpacity>
           <WebView
-            source={{uri: webviewUrl!}}
-            style={{flex: 1}}
+            ref={webViewRef}
+            source={{ uri: webviewUrl }}
+            style={{ flex: 1 }}
             injectedJavaScript={injectedJavaScript}
             onNavigationStateChange={onNavigationStateChange}
+            onMessage={onMessage}
           />
         </View>
       )}
