@@ -61,7 +61,7 @@ const App: React.FC = () => {
   };
 
   const injectedJavaScript = `
-  (function() {
+  (async function() {
     var urls = ${JSON.stringify(
       urls.split(',').map(url => url.trim().toLowerCase())
     )};
@@ -69,7 +69,11 @@ const App: React.FC = () => {
     var maxClicks = ${clicks};
     var noMatchingSponsoredLink = true;
   
-    function clickAndReturnHome() {
+    function delay(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+  
+    async function clickAndReturnHome() {
       if (clickCount >= maxClicks) {
         console.log('Max clicks reached.');
         return;
@@ -99,12 +103,12 @@ const App: React.FC = () => {
                 link.click();
                 clickCount++;
                 console.log('Click count:', clickCount);
-                setTimeout(() => {
-                  window.location.href = 'https://www.google.com/search?q=${encodeURIComponent(
-                    searchTerm
-                  )}';
-                  setTimeout(clickAndReturnHome, 3000);
-                }, 3000);
+                await delay(3000);
+                window.location.href = 'https://www.google.com/search?q=${encodeURIComponent(
+                  searchTerm
+                )}';
+                await delay(3000);
+                await clickAndReturnHome();
               } catch (error) {
                 console.error("Error clicking link:", error);
               }
@@ -116,16 +120,15 @@ const App: React.FC = () => {
   
       if (noMatchingSponsoredLink) {
         console.log('No matching sponsored link found.');
-        setTimeout(() => {
-          window.close();
-        }, 3000);
+        alert('No matching sponsored link found.');
+        window.ReactNativeWebView.postMessage("noMatchingSponsoredLink");
+        await delay(1000);
       }
     }
   
-    clickAndReturnHome();
+    await clickAndReturnHome();
   })();
   `;
-  
 
   const onMessage = (event: any) => {
     const { data } = event.nativeEvent;
